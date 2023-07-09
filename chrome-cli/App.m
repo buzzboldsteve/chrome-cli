@@ -84,6 +84,7 @@ static NSString * const kJsPrintSource = @"(function() { return document.getElem
 }
 
 - (void)listTabs:(Arguments *)args {
+    int count = 1;
     if (self->outputFormat == kOutputFormatJSON) {
         NSMutableArray *tabInfos = [[NSMutableArray alloc] init];
 
@@ -92,11 +93,13 @@ static NSString * const kJsPrintSource = @"(function() { return document.getElem
                 NSDictionary *tabInfo = @{
                     @"windowId" : @(window.id),
                     @"windowName" : window.name,
+                    @"index" : @(count),
                     @"id" : @(tab.id),
                     @"title" : tab.title,
                     @"url" : tab.URL,
                 };
                 [tabInfos addObject:tabInfo];
+                ++count;
             }
         }
 
@@ -107,11 +110,8 @@ static NSString * const kJsPrintSource = @"(function() { return document.getElem
     } else {
         for (chromeWindow *window in self.chrome.windows) {
             for (chromeTab *tab in window.tabs) {
-                if (self.chrome.windows.count > 1) {
-                    printf("[%ld:%ld] %s\n", (long)window.id, (long)tab.id, tab.title.UTF8String);
-                } else {
-                    printf("[%ld] %s\n", (long)tab.id, tab.title.UTF8String);
-                }
+              printf("[%ld] %s\n", (long)count, tab.title.UTF8String);
+              ++count;
             }
         }
     }
@@ -414,10 +414,22 @@ static NSString * const kJsPrintSource = @"(function() { return document.getElem
     NSInteger tabId = [args asInteger:@"id"];
 
     // Find tab and the window that the tab resides in
-    chromeTab *tab = [self findTab:tabId];
-    chromeWindow *window = [self findWindowWithTab:tab];
+    //chromeTab *tab = [self findTab:tabId];
+    //chromeWindow *window = [self findWindowWithTab:tab];
 
-    [self setTabActive:tab inWindow:window];
+    //[self setTabActive:tab inWindow:window];
+    NSInteger idx = 1;
+    for (chromeWindow *window in self.chrome.windows) {
+      for (chromeTab *tab in window.tabs) {
+        if (idx == tabId) {
+          [self setTabActivateToIndex: idx inWindow: window];
+          return;
+        }
+        ++idx;
+      }
+    }
+
+
 }
 
 - (void)printActiveWindowSize:(Arguments *)args {
@@ -683,6 +695,10 @@ static NSString * const kJsPrintSource = @"(function() { return document.getElem
 
 - (void)setTabActive:(chromeTab *)tab inWindow:(chromeWindow *)window {
     NSInteger index = [self findTabIndex:tab inWindow:window];
+    window.activeTabIndex = index;
+}
+
+- (void)setTabActivateToIndex:(NSInteger)index inWindow:(chromeWindow *)window {
     window.activeTabIndex = index;
 }
 
