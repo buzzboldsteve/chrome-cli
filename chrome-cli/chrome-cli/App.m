@@ -11,7 +11,7 @@
 
 
 static NSInteger const kMaxLaunchTimeInSeconds = 15;
-static NSString * const kVersion = @"1.9.1";
+static NSString * const kVersion = @"1.9.3";
 static NSString * const kJsPrintSource = @"(function() { return document.getElementsByTagName('html')[0].outerHTML })();";
 
 
@@ -19,40 +19,12 @@ static NSString * const kJsPrintSource = @"(function() { return document.getElem
 @implementation App {
     NSString *bundleIdentifier;
     OutputFormat outputFormat;
-    NSMutableArray *windows;
-    NSMutableArray *tabsToWindow;
-    chromeWindow* activeWindow;
-    chromeTab* activeTab;
-}
-
-- (NSString*) genKeyWithPoint: (chromeWindow*) p {
-  return [NSString stringWithFormat:@"%p", p];
 }
 
 - (id)initWithBundleIdentifier:(NSString *)bundleIdentifier outputFormat:(OutputFormat)outputFormat {
     self = [super init];
     self->bundleIdentifier = bundleIdentifier;
     self->outputFormat = outputFormat;
-    self->windows = [NSMutableArray array];
-    self->tabsToWindow = [NSMutableArray array];
-
-    // extract window and tab object
-    for (chromeWindow *window in self.chrome.windows) {
-      if (self->activeWindow == nil) {
-        self->activeWindow = window;
-      }
-      NSMutableArray *tabs = [NSMutableArray array];
-      for (chromeTab *tab in window.tabs) {
-        [tabs addObject: tab];
-      }
-      [self->tabsToWindow addObject: tabs];
-      [self->windows addObject: window];
-    }
-
-    if (self->windows.count > 0) {
-        int activeTabIdx = [self activeWindow].activeTabIndex;
-        self->activeTab = [[self->tabsToWindow objectAtIndex:0] objectAtIndex: activeTabIdx-1];
-    }
     return self;
 }
 
@@ -90,14 +62,13 @@ static NSString * const kJsPrintSource = @"(function() { return document.getElem
 - (void)listWindows:(Arguments *)args {
     if (self->outputFormat == kOutputFormatJSON) {
         NSMutableArray *windowInfos = [[NSMutableArray alloc] init];
-        int winIdx = 0;
+
         for (chromeWindow *window in self.chrome.windows) {
             NSDictionary *windowInfo = @{
-                @"id" : @(winIdx),
+                @"id" : window.id,
                 @"name" : window.name,
             };
             [windowInfos addObject:windowInfo];
-            ++winIdx;
         }
 
         NSDictionary *output = @{
@@ -105,10 +76,8 @@ static NSString * const kJsPrintSource = @"(function() { return document.getElem
         };
         [self printJSON:output];
     } else {
-        int winIdx = 0;
         for (chromeWindow *window in self.chrome.windows) {
-            printf("[%ld] %s\n", (long)winIdx, window.name.UTF8String);
-            ++winIdx;
+            printf("[%s] %s\n", window.id.UTF8String, window.name.UTF8String);
         }
     }
 
@@ -119,23 +88,19 @@ static NSString * const kJsPrintSource = @"(function() { return document.getElem
     if (self->outputFormat == kOutputFormatJSON) {
         NSMutableArray *tabInfos = [[NSMutableArray alloc] init];
 
-        int winIdx = 0;
         for (chromeWindow *window in self.chrome.windows) {
-            int tabIdx = 0;
             for (chromeTab *tab in window.tabs) {
                 NSDictionary *tabInfo = @{
-                    @"windowId" : @(winIdx),
+                    @"windowId" : window.id,
                     @"windowName" : window.name,
                     @"index" : @(count),
-                    @"id" : @(tabIdx),
+                    @"id" : @(tab.id),
                     @"title" : tab.title,
                     @"url" : tab.URL,
                 };
                 [tabInfos addObject:tabInfo];
-                ++tabIdx;
                 ++count;
             }
-            ++winIdx;
         }
 
         NSDictionary *output = @{
@@ -143,14 +108,11 @@ static NSString * const kJsPrintSource = @"(function() { return document.getElem
         };
         [self printJSON:output];
     } else {
-        int winIdx = 0;
         for (chromeWindow *window in self.chrome.windows) {
-            int tabIdx = 0;
             for (chromeTab *tab in window.tabs) {
-                printf("[%d:%d] %s\n", winIdx, tabIdx, tab.title.UTF8String);
-                ++tabIdx;
+              printf("[%ld] %s\n", (long)count, tab.title.UTF8String);
+              ++count;
             }
-            ++winIdx;
         }
     }
 }
@@ -159,21 +121,17 @@ static NSString * const kJsPrintSource = @"(function() { return document.getElem
     if (self->outputFormat == kOutputFormatJSON) {
         NSMutableArray *tabInfos = [[NSMutableArray alloc] init];
 
-        int winIdx = 0;
         for (chromeWindow *window in self.chrome.windows) {
-            int tabIdx = 0;
             for (chromeTab *tab in window.tabs) {
                 NSDictionary *tabInfo = @{
-                    @"windowId" : @(winIdx),
+                    @"windowId" : window.id,
                     @"windowName" : window.name,
-                    @"id" : @(tabIdx),
+                    @"id" : tab.id,
                     @"title" : tab.title,
                     @"url" : tab.URL,
                 };
                 [tabInfos addObject:tabInfo];
-                ++tabIdx;
             }
-            ++winIdx;
         }
 
         NSDictionary *output = @{
@@ -181,18 +139,14 @@ static NSString * const kJsPrintSource = @"(function() { return document.getElem
         };
         [self printJSON:output];
     } else {
-        int winIdx = 0;
         for (chromeWindow *window in self.chrome.windows) {
-            int tabIdx = 0;
             for (chromeTab *tab in window.tabs) {
                 if (self.chrome.windows.count > 1) {
-                    printf("[%d:%d] %s\n", winIdx, tabIdx, tab.URL.UTF8String);
+                    printf("[%s:%s] %s\n", window.id.UTF8String, tab.id.UTF8String, tab.URL.UTF8String);
                 } else {
-                    printf("[%d] %s\n", tabIdx, tab.URL.UTF8String);
+                    printf("[%s] %s\n", tab.id.UTF8String, tab.URL.UTF8String);
                 }
-                ++tabIdx;
             }
-            ++winIdx;
         }
     }
 }
@@ -200,39 +154,31 @@ static NSString * const kJsPrintSource = @"(function() { return document.getElem
 - (void)listTabsWithLink:(Arguments *)args {
     if (self->outputFormat == kOutputFormatJSON) {
         NSMutableArray *tabInfos = [[NSMutableArray alloc] init];
-        int winIdx = 0;
         for(chromeWindow *window in self.chrome.windows) {
-            int tabIdx = 0;
             for (chromeTab *tab in window.tabs) {
                 NSDictionary *tabInfo = @{
-                    @"windowId": @(winIdx),
+                    @"windowId": window.id,
                     @"windowName": window.name,
-                    @"id": @(tabIdx),
+                    @"id": tab.id,
                     @"title": tab.title,
                     @"url": tab.URL,
                 };
                 [tabInfos addObject:tabInfo];
-                ++tabIdx;
             }
-            ++winIdx;
         }
         NSDictionary *output = @{
             @"tabs": tabInfos,
         };
         [self printJSON:output];
     } else {
-        int winIdx = 0;
         for (chromeWindow *window in self.chrome.windows) {
-            int tabIdx = 0;
             for (chromeTab *tab in window.tabs) {
                 if (self.chrome.windows.count > 1) {
-                    printf("[%d:%d] title: %s, url: %s\n", winIdx, tabIdx, tab.title.UTF8String, tab.URL.UTF8String);
+                    printf("[%s:%s] title: %s, url: %s\n", window.id.UTF8String, tab.id.UTF8String, tab.title.UTF8String, tab.URL.UTF8String);
                 } else {
-                    printf("[%dß] title: %s, url: %s\n", tabIdx, tab.title.UTF8String, tab.URL.UTF8String);
+                    printf("[%s] title: %s, url: %s\n", tab.id.UTF8String, tab.title.UTF8String, tab.URL.UTF8String);
                 }
-                ++tabIdx;
             }
-            ++winIdx;
         }
     }
 }
@@ -245,20 +191,19 @@ static NSString * const kJsPrintSource = @"(function() { return document.getElem
         return;
     }
 
+
     if (self->outputFormat == kOutputFormatJSON) {
         NSMutableArray *tabInfos = [[NSMutableArray alloc] init];
 
-        int tabIdx = 0;
         for (chromeTab *tab in window.tabs) {
             NSDictionary *tabInfo = @{
-                @"windowId" : @(windowId),
+                @"windowId" : window.id,
                 @"windowName" : window.name,
-                @"id" : @(tabIdx),
+                @"id" : tab.id,
                 @"title" : tab.title,
                 @"url" : tab.URL,
             };
             [tabInfos addObject:tabInfo];
-            ++tabIdx;
         }
 
         NSDictionary *output = @{
@@ -266,10 +211,8 @@ static NSString * const kJsPrintSource = @"(function() { return document.getElem
         };
         [self printJSON:output];
     } else {
-        int tabIdx = 0;
         for (chromeTab *tab in window.tabs) {
-            printf("[%d] %s\n", tabIdx, tab.title.UTF8String);
-            ++tabIdx;
+            printf("[%s] %s\n", tab.id.UTF8String, tab.title.UTF8String);
         }
     }
 }
@@ -284,17 +227,16 @@ static NSString * const kJsPrintSource = @"(function() { return document.getElem
 
     if (self->outputFormat == kOutputFormatJSON) {
         NSMutableArray *tabInfos = [[NSMutableArray alloc] init];
-        int tabIdx = 0;
+
         for (chromeTab *tab in window.tabs) {
             NSDictionary *tabInfo = @{
-                @"windowId" : @(windowId),
+                @"windowId" : window.id,
                 @"windowName" : window.name,
-                @"id" : @(tabIdx),
+                @"id" : tab.id,
                 @"title" : tab.title,
                 @"url" : tab.URL,
             };
             [tabInfos addObject:tabInfo];
-            ++tabIdx;
         }
 
         NSDictionary *output = @{
@@ -302,10 +244,8 @@ static NSString * const kJsPrintSource = @"(function() { return document.getElem
         };
         [self printJSON:output];
     } else {
-        int tabIdx = 0;
         for (chromeTab *tab in window.tabs) {
-            printf("[%d] %s\n", tabIdx, tab.URL.UTF8String);
-            ++tabIdx;
+            printf("[%s] %s\n", tab.id.UTF8String, tab.URL.UTF8String);
         }
     }
 }
@@ -472,15 +412,24 @@ static NSString * const kJsPrintSource = @"(function() { return document.getElem
 
 - (void)activateTab:(Arguments *)args {
     NSInteger tabId = [args asInteger:@"id"];
-    chromeWindow *window = [self activeWindow];
-    int curIdx = 0;
-    for (chromeTab *tab in window.tabs) {
-        if (curIdx == tabId) {
-          [self setTabActivateToIndex: curIdx inWindow: window];
+
+    // Find tab and the window that the tab resides in
+    //chromeTab *tab = [self findTab:tabId];
+    //chromeWindow *window = [self findWindowWithTab:tab];
+
+    //[self setTabActive:tab inWindow:window];
+    NSInteger idx = 1;
+    for (chromeWindow *window in self.chrome.windows) {
+      for (chromeTab *tab in window.tabs) {
+        if (idx == tabId) {
+          [self setTabActivateToIndex: idx inWindow: window];
           return;
         }
-        ++curIdx;
+        ++idx;
+      }
     }
+
+
 }
 
 - (void)printActiveWindowSize:(Arguments *)args {
@@ -718,40 +667,30 @@ static NSString * const kJsPrintSource = @"(function() { return document.getElem
 #pragma mark Helper functions
 
 - (chromeWindow *)activeWindow {
-    if (self->activeWindow == nil) {
-        chromeWindow* window = [[[self.chrome classForScriptingClass:@"window"] alloc] init];
+    // The first object seems to alway be the active window
+    chromeWindow *window = self.chrome.windows.firstObject;
+
+    // Create new window if no window exist
+    if (!window) {
+        window = [[[self.chrome classForScriptingClass:@"window"] alloc] init];
         [self.chrome.windows addObject:window];
-        [self->windows addObject:window];
-        self->activeWindow = window;
     }
 
-    return self->activeWindow;
+    return window;
 }
 
 - (chromeWindow *)findWindow:(NSInteger)windowId {
-    int curIdx = 0;
-    for (chromeWindow *window in self.chrome.windows) {
-        if (curIdx == windowId) {
-            return window;
-        }
-        ++curIdx;
+    chromeWindow *window = [self.chrome.windows objectWithID:@(windowId)];
+
+    if (window && window.id) {
+        return window;
     }
 
     return nil;
 }
 
 - (chromeTab *)activeTab {
-    return self->activeTab;
-    // int activeTabIdx = [self activeWindow].activeTabIndex;
-    // chromeWindow* window = [self activeWindow];
-    // int curIdx = 1;
-    // for (chromeTab *t in window.tabs) {
-    //     if (curIdx == activeTabIdx) {
-    //         return t;
-    //     }
-    //     ++curIdx;
-    // }
-    // return [self activeWindow].activeTab;
+    return [self activeWindow].activeTab;
 }
 
 - (void)setTabActive:(chromeTab *)tab inWindow:(chromeWindow *)window {
@@ -764,27 +703,23 @@ static NSString * const kJsPrintSource = @"(function() { return document.getElem
 }
 
 - (chromeTab *)findTab:(NSInteger)tabId {
-    chromeWindow *window = [self activeWindow];
-    int curIdx = 0;
-    for (chromeTab *t in window.tabs) {
-        if (curIdx == tabId){
-            return t;
+    for (chromeWindow *window in self.chrome.windows) {
+        chromeTab *tab = [window.tabs objectWithID:@(tabId)];
+        if (tab && tab.id) {
+            return tab;
         }
-        ++curIdx;
     }
 
     return nil;
 }
 
 - (chromeWindow *)findWindowWithTab:(chromeTab *)tab {
-    int idx = 0;
-    for (NSArray* tabs in self->tabsToWindow) {
-      for (chromeTab *t in tabs) {
-            if (t == tab) {
-                return self->windows[idx];
+    for (chromeWindow *window in self.chrome.windows) {
+        for (chromeTab *t in window.tabs) {
+            if (t.id == tab.id) {
+                return window;
             }
         }
-        ++idx;
     }
 
     return nil;
@@ -792,54 +727,35 @@ static NSString * const kJsPrintSource = @"(function() { return document.getElem
 
 - (NSInteger)findTabIndex:(chromeTab *)tab inWindow:(chromeWindow *)window {
     // Tab index starts at 1
-    for (NSArray* tabs in tabsToWindow) {
-        int i = 0;
-        for (chromeTab *t in tabs) {
-            if (t == tab) {
-                return i;
-            }
-            i++;
+    int i = 1;
+
+    for (chromeTab *t in window.tabs) {
+        if (t.id == tab.id) {
+            return i;
         }
+        i++;
     }
 
     return NSNotFound;
 }
-
-- (NSInteger)findWindowIndex:(chromeWindow *)window {
-    int i = 0;
-
-    for (chromeWindow* win in self->windows) {
-      if (win == window) {
-        return i;
-      }
-      ++i;
-    }
-    return NSNotFound;
-}
-
-
 
 - (void)printInfo:(chromeTab *)tab {
     if (!tab) {
         return;
     }
 
-    chromeWindow *window = [self findWindowWithTab:tab];
-    NSInteger winIdx = [self findWindowIndex:window];
-    NSInteger tabIdx = [self findTabIndex:tab inWindow:window];
-
     if (self->outputFormat == kOutputFormatJSON) {
         NSDictionary *output = @{
-            @"id" : @(tabIdx),
-            @"windowId" : @(winIdx),
+            @"id" : tab.id,
+            @"windowId" : [self activeWindow].id,
             @"title" : tab.title,
             @"url" : tab.URL,
             @"loading" : @(tab.loading),
         };
         [self printJSON:output];
     } else {
-        printf("Id: %ld\n", (long)tabIdx);
-        printf("Window id: %ld\n", (long)winIdx);
+        printf("Id: %s\n", tab.id.UTF8String);
+        printf("Window id: %s\n", [self activeWindow].id.UTF8String);
         printf("Title: %s\n", tab.title.UTF8String);
         printf("Url: %s\n", tab.URL.UTF8String);
         printf("Loading: %s\n", tab.loading ? "Yes" : "No");
